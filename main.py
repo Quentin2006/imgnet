@@ -30,6 +30,8 @@ while running:
     if pygame.key.get_pressed()[pygame.K_f]:
         i, j = mouse_x // CELL_SIZE, mouse_y // CELL_SIZE
         userVals[i][j] = False
+    if pygame.key.get_pressed()[pygame.K_c]:
+        userVals.fill(0)
 
     # fill the screen with a color to wipe away anything from last frame
     screen.fill("black")
