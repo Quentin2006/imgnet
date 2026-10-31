@@ -1,32 +1,46 @@
 # Example file showing a basic pygame "game loop"
+import numpy as np
 import pygame
 
 # pygame setup
 pygame.init()
 
+CELL_SIZE = 25
+
 # dataset has 28x28 images, so we can make 1 pixel in the dataset == 25 real pixels
-screen = pygame.display.set_mode((28 * 25, 28 * 25))
+screen = pygame.display.set_mode((28 * CELL_SIZE, 28 * CELL_SIZE))
 clock = pygame.time.Clock()
 running = True
 pygame.mouse.set_visible(False)
 # the dataset is a 28x28 matrix holding bools (1 for white, 0 for blacks)
-userVals = [[0] * 28] * 28
+userVals = np.zeros((28, 28))
 
 while running:
-    mouse_x, mouse_y = pygame.mouse.get_pos()
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
+    mouse_x, mouse_y = pygame.mouse.get_pos()
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            print()
+
+    # left click
+    if pygame.mouse.get_pressed()[0]:
+        i, j = mouse_x // CELL_SIZE, mouse_y // CELL_SIZE
+        userVals[i][j] = True
+    if pygame.key.get_pressed()[pygame.K_f]:
+        i, j = mouse_x // CELL_SIZE, mouse_y // CELL_SIZE
+        userVals[i][j] = False
 
     # fill the screen with a color to wipe away anything from last frame
     screen.fill("black")
 
     # RENDER YOUR GAME HERE
-
+    for x in range(28):
+        for y in range(28):
+            if userVals[x][y]:
+                pygame.draw.rect(
+                    screen, (255, 255, 255), (x * CELL_SIZE, y * CELL_SIZE, 28, 28)
+                )
     pygame.draw.circle(screen, (255, 0, 0), (mouse_x, mouse_y), 7)
     # flip() the display to put your work on screen
     pygame.display.flip()
