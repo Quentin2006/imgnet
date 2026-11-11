@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 
@@ -154,8 +156,22 @@ class NeuralNet:
         # In order to train, we first have to get the cost of this given training step, calculate our gradient descent vector,
         # and then update the weights with that vector by subtracting it.
 
-        for i in range(epochs):
-            for i in range(len(inputs)):
+        n = len(inputs)
+        log_every = max(1, n // 10)
+        train_start = time.perf_counter()
+        print(f"[train] starting: {epochs} epochs x {n} samples", flush=True)
+
+        for epoch in range(epochs):
+            epoch_start = time.perf_counter()
+            for i in range(n):
+                if i > 0 and i % log_every == 0:
+                    elapsed = time.perf_counter() - epoch_start
+                    print(
+                        f"[train] epoch {epoch + 1}/{epochs}: {i}/{n} samples "
+                        f"({elapsed:.1f}s, {i / elapsed:.0f} samples/s)",
+                        flush=True,
+                    )
+
                 input, target = inputs[i], targets[i]
 
                 # invoke the nn
@@ -168,3 +184,17 @@ class NeuralNet:
                 for l in range(len(self.weights)):
                     self.weights[l] -= learning_rate * step_w[l]
                     self.biases[l] -= learning_rate * step_b[l]
+
+            epoch_time = time.perf_counter() - epoch_start
+            total_time = time.perf_counter() - train_start
+            eta = total_time / (epoch + 1) * (epochs - epoch - 1)
+            print(
+                f"[train] epoch {epoch + 1}/{epochs} done in {epoch_time:.1f}s "
+                f"(total {total_time:.1f}s, ETA {eta:.1f}s)",
+                flush=True,
+            )
+
+        print(
+            f"[train] finished in {time.perf_counter() - train_start:.1f}s",
+            flush=True,
+        )
