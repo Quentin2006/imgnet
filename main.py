@@ -1,4 +1,7 @@
 # Example file showing a basic pygame "game loop"
+import sys
+from pathlib import Path
+
 import numpy as np
 import pygame
 from datasets import load_dataset
@@ -12,9 +15,31 @@ CELL_SIZE = 25
 INPUT_WIDTH = 28
 GRID_PX = INPUT_WIDTH * CELL_SIZE
 PANEL_WIDTH = 280
+WEIGHTS_PATH = Path(__file__).with_name("weights.npz")
+EPOCHS = 1000
+# "cpu", "gpu" or "auto". This net is tiny (16 hidden neurons), so the CPU is
+# actually faster; the GPU only wins once hidden layers get to ~512+ neurons.
+DEVICE = "cpu"
 
 
-network = nn.NeuralNet(INPUT_WIDTH * INPUT_WIDTH, 10, 16, 2)
+def load_mnist(split: str):
+    ds = load_dataset("ylecun/mnist", split=split)
+    data = ds.with_format("numpy")[:]  # whole split as numpy arrays
+    images = data["image"].reshape(len(ds), -1).astype(np.float32) / 255.0
+    return images, data["label"]
+
+
+# reuse saved weights unless asked to retrain (python main.py --retrain)
+if WEIGHTS_PATH.exists() and "--retrain" not in sys.argv:
+    network = nn.NeuralNet.load(WEIGHTS_PATH, device=DEVICE)
+else:
+    network = nn.NeuralNet(INPUT_WIDTH * INPUT_WIDTH, 10, 16, 2, device=DEVICE)
+    inputs, targets = load_mnist("train")
+    network.train(inputs, targets, EPOCHS)
+    network.save(WEIGHTS_PATH)
+    test_inputs, test_targets = load_mnist("test")
+    acc = network.accuracy(test_inputs, test_targets)
+    print(f"[eval] test accuracy: {acc * 100:.2f}%", flush=True)
 
 # dataset has 28x28 images, so we can make 1 pixel in the dataset == 25 real pixels
 # extra space on the right holds the prediction panel
@@ -28,11 +53,6 @@ running = True
 pygame.mouse.set_visible(False)
 # the dataset is a 28x28 matrix holding bools (1 for white, 0 for blacks)
 userVals = np.zeros((INPUT_WIDTH, INPUT_WIDTH))
-
-ds = load_dataset("ylecun/mnist", split="train")
-targets = ds["label"]
-inputs = [np.asarray(img, dtype=np.float64).flatten() / 255.0 for img in ds["image"]]
-network.train(inputs, targets, 1)
 
 while running:
     # poll for events
@@ -67,7 +87,7 @@ while running:
                     (x * CELL_SIZE, y * CELL_SIZE, INPUT_WIDTH, INPUT_WIDTH),
                 )
     # userVals is indexed [x][y]; MNIST flattens row-major [y][x], so transpose first
-    outputs = network.forward(userVals.T.flatten())[0][-1]
+    outputs = network.predict(userVals.T.flatten())
     # sigmoid outputs are independent, so normalize them into percentages
     total = outputs.sum()
     probs = outputs / total if total > 0 else np.full(10, 0.1)
@@ -77,9 +97,7 @@ while running:
     pygame.draw.rect(screen, (30, 30, 36), (GRID_PX, 0, PANEL_WIDTH, GRID_PX))
     pygame.draw.line(screen, (80, 80, 90), (GRID_PX, 0), (GRID_PX, GRID_PX), 2)
     px = GRID_PX + 20
-    screen.blit(
-        title_font.render(f"Guess: {best}", True, (120, 220, 140)), (px, 20)
-    )
+    screen.blit(title_font.render(f"Guess: {best}", True, (120, 220, 140)), (px, 20))
 
     bar_max = PANEL_WIDTH - 40 - 30 - 70  # room for the digit label and % text
     row_h = 52
@@ -101,9 +119,7 @@ while running:
         )
 
     hint = "click: draw   F: erase   C: clear"
-    screen.blit(
-        hint_font.render(hint, True, (140, 140, 150)), (px, GRID_PX - 30)
-    )
+    screen.blit(hint_font.render(hint, True, (140, 140, 150)), (px, GRID_PX - 30))
 
     # cursor last so it draws over everything
     pygame.draw.circle(screen, (255, 0, 0), (mouse_x, mouse_y), 7)
