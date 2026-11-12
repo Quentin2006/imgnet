@@ -10,10 +10,11 @@ import nn
 
 # --- network settings ---
 WEIGHTS_PATH = Path(__file__).with_name("weights.npz")
-# 2 hidden layers of 256 was the best size tested (~98.2% validation accuracy);
-# wider layers were no better and need a smaller learning rate.
-HIDDEN_DIM = 256
-NUM_HIDDEN = 2
+# 5 hidden layers of 144 (12x12 squares on screen) gets ~97.4% test accuracy.
+# With this many sigmoid layers, wider ones (e.g. 256) stop learning because
+# the gradient fades on its way back; 2 x 256 gets ~98.2% if depth isn't needed.
+HIDDEN_DIM = 144
+NUM_HIDDEN = 5
 LEARNING_RATE = 1.0
 # accuracy levels off around 50 epochs; past ~100 it just memorizes
 EPOCHS = 50
@@ -22,12 +23,17 @@ EPOCHS = 50
 INPUT_WIDTH = 28  # MNIST images are 28x28
 CELL_SIZE = 25  # 1 dataset pixel == 25x25 screen pixels
 GRID_PX = INPUT_WIDTH * CELL_SIZE
-NET_X, NET_W = GRID_PX, 580  # network view, right of the drawing
+# each hidden layer is drawn as the smallest square grid that fits it
+# (144 -> 12x12, 256 -> 16x16); any leftover cells stay empty
+NEURON_PX = 16
+LAYER_COLS = LAYER_ROWS = int(np.ceil(np.sqrt(HIDDEN_DIM)))
+LAYER_W = LAYER_COLS * NEURON_PX
+LAYER_GAP = 80  # space between layer grids for the connection lines
+NET_X = GRID_PX  # network view, right of the drawing
+NET_W = 50 + NUM_HIDDEN * LAYER_W + (NUM_HIDDEN - 1) * LAYER_GAP + 40
 BARS_X, BARS_W = NET_X + NET_W, 280  # prediction bars, far right
-NEURON_PX = 14  # each hidden layer is drawn as a 16x16 grid of these
-LAYER_COLS = 16
-LAYER_X = [NET_X + 50, NET_X + 320]  # left edge of each hidden layer grid
-LAYER_Y = (GRID_PX - LAYER_COLS * NEURON_PX) // 2
+LAYER_X = [NET_X + 50 + k * (LAYER_W + LAYER_GAP) for k in range(NUM_HIDDEN)]
+LAYER_Y = (GRID_PX - LAYER_ROWS * NEURON_PX) // 2
 TOP_LINES = 30  # strongest connections drawn per layer pair
 ROW_H = 52  # prediction bar rows
 
@@ -133,7 +139,9 @@ def draw_network(screen, font, activations, weights) -> None:
     # Neurons: dark at activation 0, bright yellow at 1.
     for layer, acts in enumerate(activations[1:-1]):
         label = f"Hidden {layer + 1} ({len(acts)})"
-        screen.blit(font.render(label, True, DIM_TEXT), (LAYER_X[layer], LAYER_Y - 28))
+        # solid background so connection lines don't run through the text
+        text = font.render(label, True, DIM_TEXT, (18, 18, 24))
+        screen.blit(text, (LAYER_X[layer], LAYER_Y - 28))
         for i, v in enumerate(acts):
             x, y = hidden_pos(layer, i)
             color = (int(25 + 230 * v), int(25 + 175 * v), int(35 + 25 * v))
