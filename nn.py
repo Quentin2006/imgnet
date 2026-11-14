@@ -1,3 +1,4 @@
+import itertools
 import time
 from pathlib import Path
 
@@ -6,7 +7,8 @@ import numpy as np
 
 class NeuralNet:
     def __init__(
-        self, inputDim: int, outputDim: int, hiddenDim: int, numHidden: int
+        self, inputDim: int, outputDim: int, hiddenDim: int, numHidden: int,
+        *, output: str = "sigmoid"
     ) -> None:
         """
         we can encode nerual nets by using matricies.
@@ -15,6 +17,9 @@ class NeuralNet:
 
         sig(weight_mat * activation_vec + bias_vec) = next_layer_activations
         """
+        if output not in ("sigmoid", "softmax"):
+            raise ValueError(f"invalid output mode: {output}")
+        self.output = output
         self.inputDim = inputDim
         self.outputDim = outputDim
         self.hiddenDim = hiddenDim
@@ -28,7 +33,7 @@ class NeuralNet:
         # uniform(-1, 1) saturates the sigmoid in wide layers and they never learn.
         self.weights = [
             rng.normal(0, 1 / np.sqrt(n_in), (n_out, n_in))
-            for n_in, n_out in zip(sizes, sizes[1:])
+            for n_in, n_out in itertools.pairwise(sizes)
         ]
         self.biases = [np.zeros(n_out) for n_out in sizes[1:]]
 
@@ -49,11 +54,16 @@ class NeuralNet:
         """
         activations = [np.asarray(input)]
         zs = []
-        for w, b in zip(self.weights, self.biases):
+        for layer, (w, b) in enumerate(zip(self.weights, self.biases)):
             # a @ W.T handles a single vector or a batch, one row per sample
             z = activations[-1] @ w.T + b
             zs.append(z)
-            activations.append(self.sig(z))
+            if self.output == "softmax" and layer == len(self.weights) - 1:
+                # Subtract the maximum before exp to avoid overflow.
+                exp_z = np.exp(z - np.max(z, axis=-1, keepdims=True))
+                activations.append(exp_z / exp_z.sum(axis=-1, keepdims=True))
+            else:
+                activations.append(self.sig(z))
         return activations, zs
 
     def _one_hot(self, targets) -> np.ndarray:
@@ -61,6 +71,20 @@ class NeuralNet:
         y = np.zeros((targets.shape[0], self.outputDim))
         y[np.arange(targets.shape[0]), targets] = 1.0
         return y
+
+    def loss(self, inputs, targets) -> float:
+        """Mean per-sample squared error or cross-entropy for integer labels."""
+        activations, zs = self.forward(np.asarray(inputs))
+        y = self._one_hot(targets)
+        if self.output == "softmax":
+            # -log softmax(z)_target = logsumexp(z) - z_target, computed from the
+            # logits so it stays exact even when a probability underflows to 0.
+            z = np.atleast_2d(zs[-1])
+            z_max = z.max(axis=1, keepdims=True)
+            log_sum = np.log(np.exp(z - z_max).sum(axis=1)) + z_max[:, 0]
+            return float((log_sum - (z * y).sum(axis=1)).mean())
+        outputs = np.atleast_2d(activations[-1])
+        return float(np.sum((outputs - y) ** 2, axis=1).mean())
 
     def accuracy(self, inputs, targets) -> float:
         """Fraction of samples whose highest output matches the target."""
@@ -77,16 +101,20 @@ class NeuralNet:
         y = self._one_hot(targets)
         batch = y.shape[0]
 
-        step_w = [None] * len(self.weights)
-        step_b = [None] * len(self.biases)
+        step_w = [np.zeros_like(w) for w in self.weights]
+        step_b = [np.zeros_like(b) for b in self.biases]
 
         # dC/da for the output layer.
         dC_da = 2 * (activations[-1] - y)
 
         # Walk backwards through the layers.
         for l in reversed(range(len(self.weights))):
-            # dC/dz_j = sig'(z_j) * dC/da_j
-            delta = self.sig_prime(zs[l]) * dC_da
+            if self.output == "softmax" and l == len(self.weights) - 1:
+                # Softmax and cross-entropy simplify dC/dz to a - y.
+                delta = activations[-1] - y
+            else:
+                # dC/dz_j = sig'(z_j) * dC/da_j
+                delta = self.sig_prime(zs[l]) * dC_da
 
             # dC/dw_jk = a_k * dC/dz_j, summed over the batch then averaged
             step_w[l] = (delta.T @ activations[l]) / batch
@@ -150,19 +178,21 @@ class NeuralNet:
         arrays = {
             "dims": np.array(
                 [self.inputDim, self.outputDim, self.hiddenDim, self.numHidden]
-            )
+            ),
+            "output": np.array(self.output),
         }
         for l, (w, b) in enumerate(zip(self.weights, self.biases)):
             arrays[f"w{l}"] = w
             arrays[f"b{l}"] = b
-        np.savez(path, **arrays)
+        np.savez(path, **arrays)  # ty: ignore[invalid-argument-type]
         print(f"[save] wrote weights to {path}", flush=True)
 
     @classmethod
     def load(cls, path: str | Path) -> "NeuralNet":
         """Rebuild a network from a file written by save()."""
         data = np.load(path)
-        net = cls(*(int(v) for v in data["dims"]))
+        output = str(data["output"].item()) if "output" in data else "sigmoid"
+        net = cls(*(int(v) for v in data["dims"]), output=output)
         net.weights = [data[f"w{l}"] for l in range(len(net.weights))]
         net.biases = [data[f"b{l}"] for l in range(len(net.biases))]
         print(f"[load] loaded weights from {path}", flush=True)
