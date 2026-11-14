@@ -6,6 +6,7 @@ import numpy as np
 import pygame
 from datasets import load_dataset
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import nn
 
 # --- network settings ---

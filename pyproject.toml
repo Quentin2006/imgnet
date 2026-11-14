@@ -1,0 +1,15 @@
+[project]
+name = "neural-net"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["numpy", "pygame", "datasets", "pillow"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

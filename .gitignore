@@ -1,1 +1,4 @@
 __pycache__/
+.venv/
+text/input.txt
+.pytest_cache/
